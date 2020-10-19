@@ -9,8 +9,8 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/datatheorem/TrustKit.git", :tag => "#{s.version}" }
 
   s.ios.deployment_target = '10.0'
-  s.osx.deployment_target = '10.13'
-  s.tvos.deployment_target = '12.0'
+  s.osx.deployment_target = '10.12'
+  s.tvos.deployment_target = '11.0'
   s.watchos.deployment_target = '4.0'
 
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
