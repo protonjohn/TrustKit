@@ -20,7 +20,7 @@ NSDictionary *parseTrustKitConfiguration(NSDictionary *trustKitArguments)
 {
     // Convert settings supplied by the user to a configuration dictionary that can be used by TrustKit
     // This includes checking the sanity of the settings and converting public key hashes/pins from an
-    // NSSArray of NSStrings (as provided by the user) to an NSSet of NSData (as needed by TrustKit)
+    // NSArray of NSStrings (as provided by the user) to an NSSet of NSData (as needed by TrustKit)
     
     // Initialize domain registry library
     InitializeDomainRegistry();

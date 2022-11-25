@@ -20,26 +20,14 @@
 #import "TSKLog.h"
 #import "TSKPinningValidator_Private.h"
 
+static const char kTSKPinFailureReporterQueueLabel[] = "com.datatheorem.trustkit.reporterqueue";
+
+// A shared hash cache for use by all TrustKit instances
+static TSKSPKIHashCache *sharedHashCache;
 
 @interface TSKPinningValidator ()
 
 @property (nonatomic) TSKSPKIHashCache *spkiHashCache;
-
-/**
- The dictionary of domains that were configured and their corresponding pinning policy.
- */
-@property (nonatomic, readonly, nonnull) NSDictionary<NSString *, TKSDomainPinningPolicy *> *domainPinningPolicies;
-
-/**
- Set to true to ignore the trust anchors in the user trust store. Only applicable
- to platforms that support a user trust store (Mac OS).
- */
-@property (nonatomic, readonly) BOOL ignorePinsForUserTrustAnchors;
-
-/**
- The callback invoked with validation results.
- */
-@property (nonatomic, readonly, nonnull) TSKPinningValidatorCallback validationCallback;
 
 /**
  The queue use when invoking the `validationCallback`.
@@ -64,19 +52,24 @@
 
 #pragma mark Instance Methods
 
-- (instancetype _Nullable)initWithDomainPinningPolicies:(NSDictionary<NSString *, TKSDomainPinningPolicy *> * _Nonnull)domainPinningPolicies
-                                              hashCache:(TSKSPKIHashCache * _Nonnull)hashCache
-                          ignorePinsForUserTrustAnchors:(BOOL)ignorePinsForUserTrustAnchors
-                                validationCallbackQueue:(dispatch_queue_t _Nonnull)validationCallbackQueue
-                                     validationCallback:(TSKPinningValidatorCallback)validationCallback
+- (instancetype)initWithDomainPinningPolicies:(NSDictionary<NSString *,NSDictionary *> *)domainPinningPolicies
+                ignorePinsForUserTrustAnchors:(BOOL)ignorePinsForUserTrustAnchors
 {
     self = [super init];
     if (self) {
+        static dispatch_once_t onceToken;
+        dispatch_once(&onceToken, ^{
+            sharedHashCache = [[TSKSPKIHashCache alloc] initWithIdentifier:kTSKSPKISharedHashCacheIdentifier];
+        });
+
+        // Create a dispatch queue for activating the reporter
+        // We use a serial queue targeting the global default queue in order to ensure reports are sent one by one
+        // even when a lot of pin failures are occurring, instead of spamming the global queue with events to process
+        _validationCallbackQueue = dispatch_queue_create(kTSKPinFailureReporterQueueLabel, DISPATCH_QUEUE_SERIAL);
+
         _domainPinningPolicies = domainPinningPolicies;
         _ignorePinsForUserTrustAnchors = ignorePinsForUserTrustAnchors;
-        _validationCallbackQueue = validationCallbackQueue;
-        _validationCallback = validationCallback;
-        _spkiHashCache = hashCache;
+        _spkiHashCache = sharedHashCache;
     }
     return self;
 }

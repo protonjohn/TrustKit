@@ -28,17 +28,12 @@ static NSString * const kTSKConfiguration = @"TSKConfiguration";
 // Email info@datatheorem.com if you need a free dashboard to see your App's reports
 static NSString * const kTSKDefaultReportUri = @"https://overmind.datatheorem.com/trustkit/report";
 
-static const char kTSKPinFailureReporterQueueLabel[] = "com.datatheorem.trustkit.reporterqueue";
-
 
 #pragma mark TrustKit Global State
 
 
 // Shared TrustKit singleton instance
 static TrustKit *sharedTrustKit;
-
-// A shared hash cache for use by all TrustKit instances
-static TSKSPKIHashCache *sharedHashCache;
 
 // Default logger block: only log in debug builds and add TrustKit at the beginning of the line
 #if DEBUG
@@ -135,35 +130,74 @@ void TSKLog(NSString *format, ...)
             sharedContainerIdentifier:(NSString *)sharedContainerIdentifier
                           isSingleton:(BOOL)isSingleton
 {
+    // Handle global configuration flags here
+    // TSKIgnorePinningForUserDefinedTrustAnchors
+#if TARGET_OS_IPHONE
+    BOOL userTrustAnchorBypass = NO;
+#else
+    BOOL userTrustAnchorBypass = [trustKitConfig[kTSKIgnorePinningForUserDefinedTrustAnchors] boolValue];
+#endif
+
+    // Configure the pinning validator and register for pinning callbacks in order to
+    // trigger reports on the pinning failure reporter background queue.
+
+    __weak typeof(self) weakSelf = self;
+    TSKPinningValidator* pinningValidator = [[TSKPinningValidator alloc]
+                                             initWithDomainPinningPolicies:_configuration[kTSKPinnedDomains]
+                                             ignorePinsForUserTrustAnchors:userTrustAnchorBypass];
+
+    pinningValidator.validationCallback = ^(TSKPinningValidatorResult * _Nonnull result,
+		                                             NSString * _Nonnull notedHostname,
+                                               TKSDomainPinningPolicy * _Nonnull notedHostnamePinningPolicy)
+        {
+            typeof(self) strongSelf = weakSelf;
+            if (!strongSelf) {
+                return;
+            }
+        
+            // Invoke client handler if set
+            TSKPinningValidatorCallback userDefinedCallback = strongSelf.pinningValidatorCallback;
+            if (userDefinedCallback) {
+                dispatch_async(strongSelf.pinningValidatorCallbackQueue, ^{
+                    userDefinedCallback(result, notedHostname, notedHostnamePinningPolicy);
+                });
+            }
+        
+            // Send analytics report
+            [strongSelf sendValidationReport:result
+                               notedHostname:notedHostname
+                               pinningPolicy:notedHostnamePinningPolicy];
+        };
+
+    return [self initWithConfiguration:trustKitConfig
+             sharedContainerIdentifier:sharedContainerIdentifier
+                      pinningValidator:pinningValidator
+         ignorePinsForUserTrustAnchors:userTrustAnchorBypass
+                           isSingleton:isSingleton];
+}
+
+- (instancetype)initWithConfiguration:(NSDictionary<TSKGlobalConfigurationKey, id> *)trustKitConfig
+            sharedContainerIdentifier:(NSString *)sharedContainerIdentifier
+                     pinningValidator:(TSKPinningValidator*)pinningValidator
+        ignorePinsForUserTrustAnchors:(BOOL)userTrustAnchorBypass
+                          isSingleton:(BOOL)isSingleton
+{
     NSParameterAssert(trustKitConfig);
     if (!trustKitConfig) {
         return nil;
     }
-    
+
     self = [super init];
     if (self && [trustKitConfig count] > 0) {
         // Convert and store the SSL pins in our global variable
         _configuration = parseTrustKitConfiguration(trustKitConfig);
-        
+
         _pinningValidatorCallbackQueue = dispatch_get_main_queue();
-        
-        // Create a dispatch queue for activating the reporter
-        // We use a serial queue targetting the global default queue in order to ensure reports are sent one by one
-        // even when a lot of pin failures are occuring, instead of spamming the global queue with events to process
-        _pinFailureReporterQueue = dispatch_queue_create(kTSKPinFailureReporterQueueLabel, DISPATCH_QUEUE_SERIAL);
-        
+
         // Create our reporter for sending pin validation failures; do this before hooking NSURLSession so we don't hook ourselves
         _pinFailureReporter = [[TSKBackgroundReporter alloc] initAndRateLimitReports:YES
                                                            sharedContainerIdentifier:sharedContainerIdentifier];
-        
-        // Handle global configuration flags here
-        // TSKIgnorePinningForUserDefinedTrustAnchors
-#if TARGET_OS_IPHONE
-        BOOL userTrustAnchorBypass = NO;
-#else
-        BOOL userTrustAnchorBypass = [_configuration[kTSKIgnorePinningForUserDefinedTrustAnchors] boolValue];
-#endif
-        
+
         // TSKSwizzleNetworkDelegates - check if we are initializing the singleton / shared instance
         if (!isSingleton)
         {
@@ -174,44 +208,14 @@ void TSKLog(NSString *format, ...)
                             format:@"Cannot use TSKSwizzleNetworkDelegates outside the TrustKit sharedInstance"];
             }
         }
-        
-        // Configure the pinning validator and register for pinning callbacks in order to
-        // trigger reports on the pinning failure reporter background queue.
-        static dispatch_once_t onceToken;
-        dispatch_once(&onceToken, ^{
-            sharedHashCache = [[TSKSPKIHashCache alloc] initWithIdentifier:kTSKSPKISharedHashCacheIdentifier];
-        });
-        
-        __weak typeof(self) weakSelf = self;
-        _pinningValidator = [[TSKPinningValidator alloc] initWithDomainPinningPolicies:_configuration[kTSKPinnedDomains]
-                                                                             hashCache:sharedHashCache
-                                                         ignorePinsForUserTrustAnchors:userTrustAnchorBypass
-                                                               validationCallbackQueue:_pinFailureReporterQueue
-                                                                    validationCallback:^(TSKPinningValidatorResult * _Nonnull result, NSString * _Nonnull notedHostname, TKSDomainPinningPolicy *_Nonnull notedHostnamePinningPolicy) {
-                                                                        typeof(self) strongSelf = weakSelf;
-                                                                        if (!strongSelf) {
-                                                                            return;
-                                                                        }
-                                                                        
-                                                                        // Invoke client handler if set
-                                                                        TSKPinningValidatorCallback userDefinedCallback = strongSelf.pinningValidatorCallback;
-                                                                        if (userDefinedCallback) {
-                                                                            dispatch_async(strongSelf.pinningValidatorCallbackQueue, ^{
-                                                                                userDefinedCallback(result, notedHostname, notedHostnamePinningPolicy);
-                                                                            });
-                                                                        }
-                                                                        
-                                                                        // Send analytics report
-                                                                        [strongSelf sendValidationReport:result
-                                                                                           notedHostname:notedHostname
-                                                                                           pinningPolicy:notedHostnamePinningPolicy];
-                                                                    }];
-        
+
+
+        _pinningValidator = pinningValidator;
+
         TSKLog(@"Successfully initialized with configuration %@", _configuration);
     }
     return self;
 }
-
 
 #pragma mark Validation Callback
 

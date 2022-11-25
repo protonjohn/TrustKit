@@ -1,5 +1,5 @@
 /*
- 
+
  TSKPinningValidator.h
  TrustKit
  
@@ -10,6 +10,7 @@
  */
 
 #import "TSKTrustDecision.h"
+#import "TSKPinningValidatorCallback.h"
 
 #if __has_feature(modules)
 @import Foundation;
@@ -35,6 +36,36 @@
  For these connections, pin validation must be manually triggered using one of the two available methods within `TSKPinningValidator`.
  */
 @interface TSKPinningValidator : NSObject
+
+#pragma mark Properties
+
+/**
+ The dictionary of domains that were configured and their corresponding pinning policy.
+ */
+@property (nonatomic, readonly, nonnull) NSDictionary<NSString *, TKSDomainPinningPolicy *> *domainPinningPolicies;
+
+/**
+ Set to true to ignore the trust anchors in the user trust store. Only applicable
+ to platforms that support a user trust store (Mac OS).
+ */
+@property (nonatomic, readonly) BOOL ignorePinsForUserTrustAnchors;
+
+/**
+ The callback invoked with validation results.
+ */
+@property (nonatomic, nullable) TSKPinningValidatorCallback validationCallback;
+
+#pragma mark Init routine
+
+/**
+ Initialize an instance of TSKPinningValidator.
+
+ @param domainPinningPolicies A dictionary of domains and the corresponding pinning policy.
+ @param ignorePinsForUserTrustAnchors Set to true to ignore the trust anchors in the user trust store
+ @return Initialized instance
+ */
+- (instancetype _Nullable)initWithDomainPinningPolicies:(NSDictionary<NSString *, NSDictionary *> * _Nonnull)domainPinningPolicies
+                          ignorePinsForUserTrustAnchors:(BOOL)ignorePinsForUserTrustAnchors;
 
 #pragma mark High-level Validation Method
 
@@ -70,7 +101,6 @@
       completionHandler:(void (^ _Nonnull)(NSURLSessionAuthChallengeDisposition disposition,
                                            NSURLCredential * _Nullable credential))completionHandler;
 
-
 #pragma mark Low-level Validation Method
 
 /**
@@ -90,8 +120,7 @@
  
  @exception NSException Thrown when TrustKit has not been initialized with a pinning policy.
  */
-- (TSKTrustDecision)evaluateTrust:(SecTrustRef _Nonnull)serverTrust forHostname:(NSString * _Nonnull)serverHostname;
-
-
+- (TSKTrustDecision)evaluateTrust:(SecTrustRef _Nonnull)serverTrust
+                      forHostname:(NSString * _Nonnull)serverHostname;
 
 @end

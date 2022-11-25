@@ -35,20 +35,42 @@ TSKTrustEvaluationResult verifyPublicKeyPin(SecTrustRef serverTrust, NSString *s
     
     // Create and use a sane SSL policy to force hostname validation, even if the supplied trust has a bad
     // policy configured (such as one from SecPolicyCreateBasicX509())
-    SecPolicyRef SslPolicy = SecPolicyCreateSSL(YES, (__bridge CFStringRef)(serverHostname));
+    SecPolicyRef SslPolicy = SecPolicyCreateSSL(YES, verifyHostname ? (__bridge CFStringRef)(serverHostname) : nil);
     SecTrustSetPolicies(serverTrust, SslPolicy);
     CFRelease(SslPolicy);
-    
-    SecTrustResultType trustResult = 0;
-    if (SecTrustEvaluate(serverTrust, &trustResult) != errSecSuccess)
-    {
-        TSKLog(@"SecTrustEvaluate error for %@", serverHostname);
-        CFRelease(serverTrust);
-        return TSKTrustEvaluationErrorInvalidParameters;
+
+    bool success = false;
+    if (@available(macOS 10.14, iOS 13, macCatalyst 13.1, *)) {
+        CFErrorRef secError;
+        if (!SecTrustEvaluateWithError(serverTrust, &secError)) {
+            TSKLog(@"SecTrustEvaluate error for %@", serverHostname);
+            CFRelease(serverTrust);
+            return TSKTrustEvaluationErrorInvalidParameters;
+        }
+
+        if (!secError) {
+            success = true;
+        }
+    } else {
+        SecTrustResultType trustResult = 0;
+        if (SecTrustEvaluate(serverTrust, &trustResult) != errSecSuccess)
+        {
+            TSKLog(@"SecTrustEvaluate error for %@", serverHostname);
+            CFRelease(serverTrust);
+            return TSKTrustEvaluationErrorInvalidParameters;
+        }
+
+        // kSecTrustResultUnspecified: This value indicates that evaluation reached an (implicitly trusted) anchor
+        //                             certificate without any evaluation failures, but never encountered any explicitly
+        //                             stated user-trust preference. This is the most common return value.
+        // kSecTrustResultProceed: The user granted permission to trust the certificate for the purposes designated in
+        //                         the specified policies.
+        if ((trustResult == kSecTrustResultUnspecified) || (trustResult == kSecTrustResultProceed)) {
+            success = true;
+        }
     }
-    
-    if ((trustResult != kSecTrustResultUnspecified) && (trustResult != kSecTrustResultProceed) && verifyHostname)
-    {
+
+    if (!success) {
         // Default SSL validation failed
         CFDictionaryRef evaluationDetails = SecTrustCopyResult(serverTrust);
         TSKLog(@"Error: default SSL validation failed for %@: %@", serverHostname, evaluationDetails);

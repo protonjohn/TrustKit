@@ -203,6 +203,22 @@ NS_ASSUME_NONNULL_BEGIN
 - (instancetype)initWithConfiguration:(NSDictionary<TSKGlobalConfigurationKey, id> *)trustKitConfig
             sharedContainerIdentifier:(nullable NSString *)sharedContainerIdentifier;
 
+#pragma mark TLS Validation Reports
+
+/** 
+ Receives pin validation results and turns them into pin validation reports
+
+ This is called by the default TSKPinningValidator implementation. If you are subclassing the default
+ implementation, you should call this function in your TSKPinningValidatorCallback to send reports of
+ validation errors.
+
+ @param result The TSKPinningValidatorResult resulting from the validation of the server’s identity.
+ @param notedHostname The entry within the SSL pinning configuration that was used for the server being validated.
+ @param notedHostnamePinningPolicy The notedHostname‘s pinning policy, which was used for the server being validated.
+ */
+- (void)sendValidationReport:(TSKPinningValidatorResult *)result
+               notedHostname:(NSString *)notedHostname 
+               pinningPolicy:(NSDictionary<TSKDomainConfigurationKey, id> *)notedHostnamePinningPolicy;
 
 #pragma mark Other Settings
 

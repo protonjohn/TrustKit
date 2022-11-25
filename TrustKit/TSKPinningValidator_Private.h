@@ -11,28 +11,6 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/* Methods that are internal to TrustKit */
-@interface TSKPinningValidator (Internal)
-
-/**
- Initialize an instance of TSKPinningValidator.
- 
- @param domainPinningPolicies A dictionnary of domains and the corresponding pinning policy.
- @param hashCache The hash cache to use. If nil, no caching is performed, performance may suffer.
- @param ignorePinsForUserTrustAnchors Set to true to ignore the trust anchors in the user trust store
- @param validationCallbackQueue The queue used when invoking the validationResultHandler
- @param validationCallback The callback invoked with validation results
- @return Initialized instance
- */
-- (instancetype _Nullable)initWithDomainPinningPolicies:(NSDictionary<NSString *, TKSDomainPinningPolicy *> *)domainPinningPolicies
-                                              hashCache:(TSKSPKIHashCache *)hashCache
-                          ignorePinsForUserTrustAnchors:(BOOL)ignorePinsForUserTrustAnchors
-                                validationCallbackQueue:(dispatch_queue_t)validationCallbackQueue
-                                     validationCallback:(TSKPinningValidatorCallback)validationCallback;
-
-@end
-
-
 @interface TSKPinningValidatorResult (Internal)
 
 - (instancetype _Nullable)initWithServerHostname:(NSString *)serverHostname
