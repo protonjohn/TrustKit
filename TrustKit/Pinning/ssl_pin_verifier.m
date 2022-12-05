@@ -40,34 +40,21 @@ TSKTrustEvaluationResult verifyPublicKeyPin(SecTrustRef serverTrust, NSString *s
     CFRelease(SslPolicy);
 
     bool success = false;
-    if (@available(macOS 10.14, iOS 13, macCatalyst 13.1, *)) {
-        CFErrorRef secError;
-        if (!SecTrustEvaluateWithError(serverTrust, &secError)) {
-            TSKLog(@"SecTrustEvaluate error for %@", serverHostname);
-            CFRelease(serverTrust);
-            return TSKTrustEvaluationErrorInvalidParameters;
-        }
+    SecTrustResultType trustResult = 0;
+    if (SecTrustEvaluate(serverTrust, &trustResult) != errSecSuccess)
+    {
+        TSKLog(@"SecTrustEvaluate error for %@", serverHostname);
+        CFRelease(serverTrust);
+        return TSKTrustEvaluationErrorInvalidParameters;
+    }
 
-        if (!secError) {
-            success = true;
-        }
-    } else {
-        SecTrustResultType trustResult = 0;
-        if (SecTrustEvaluate(serverTrust, &trustResult) != errSecSuccess)
-        {
-            TSKLog(@"SecTrustEvaluate error for %@", serverHostname);
-            CFRelease(serverTrust);
-            return TSKTrustEvaluationErrorInvalidParameters;
-        }
-
-        // kSecTrustResultUnspecified: This value indicates that evaluation reached an (implicitly trusted) anchor
-        //                             certificate without any evaluation failures, but never encountered any explicitly
-        //                             stated user-trust preference. This is the most common return value.
-        // kSecTrustResultProceed: The user granted permission to trust the certificate for the purposes designated in
-        //                         the specified policies.
-        if ((trustResult == kSecTrustResultUnspecified) || (trustResult == kSecTrustResultProceed)) {
-            success = true;
-        }
+    // kSecTrustResultUnspecified: This value indicates that evaluation reached an (implicitly trusted) anchor
+    //                             certificate without any evaluation failures, but never encountered any explicitly
+    //                             stated user-trust preference. This is the most common return value.
+    // kSecTrustResultProceed: The user granted permission to trust the certificate for the purposes designated in
+    //                         the specified policies.
+    if ((trustResult == kSecTrustResultUnspecified) || (trustResult == kSecTrustResultProceed)) {
+        success = true;
     }
 
     if (!success) {
